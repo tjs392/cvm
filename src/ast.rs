@@ -65,7 +65,7 @@ pub enum Expr {
     FieldAccess(Box<Expr>, String),
 
     // Struct(value: 1)
-    StructInit(Stirng, Vec<(String, Expr)>),
+    StructInit(String, Vec<(String, Expr)>),
 
     // foo(x, y)
     FunctionCall(String, Vec<Expr>),
@@ -83,13 +83,17 @@ pub enum BinOp {
     Gt,
     And,
     Or,
+
+    BitAnd,
+    BitOr,
+    BitXor,
+    LShift,
+    RShift
 }
 
 // unary operations
 pub enum UnaryOp {
     Not,
     Neg,
+    BitNot
 }
-
-
-

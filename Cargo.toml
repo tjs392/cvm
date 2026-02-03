@@ -3,4 +3,8 @@ name = "tidyc"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "tidyc"
+sources = ["src/main.rs"]
+
 [dependencies]
