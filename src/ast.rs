@@ -57,7 +57,7 @@ pub enum Expr {
     
     // self explanatory
     Null,
-    Identifer(String),
+    Identifier(String),
     BinOp(Box<Expr>, BinOp, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
 
