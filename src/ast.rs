@@ -97,7 +97,6 @@ pub enum Type {
     // derived types
     Pointer(Box<Type>), // int*, float*, etc.
     Array(Box<Type>, Option<usize>), // int[10] or int[],
-    Function(Box<Type>, Vec<Param>), //int (*)(int, int),
 
     // user defined
     Struct(String),
@@ -208,7 +207,6 @@ pub enum Expr {
     // struct.val
     FieldAccess(Box<Expr>, String),
 
-    StructInit(String, Vec<Expr>),
     ArrayIndex(Box<Expr>, Box<Expr>),     // arr[i]
     Deref(Box<Expr>),                     // *ptr
     AddrOf(Box<Expr>),                     // &x

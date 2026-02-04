@@ -167,9 +167,51 @@ impl Lexer {
                 continue;
             }
 
-            // check for numbers
-            // including floats
+            // check for numbers (decimal, hex, octal, floats)
             if ch.is_ascii_digit() || (ch == '.' && self.input.get(self.pos + 1).map_or(false, |c| c.is_ascii_digit())) {
+                // hex: 0x or 0X
+                if ch == '0' && self.input.get(self.pos + 1).map_or(false, |&c| c == 'x' || c == 'X') {
+                    self.advance();
+                    self.advance();
+                    let mut hex = String::new();
+                    while let Some(c) = self.peek() {
+                        if c.is_ascii_hexdigit() {
+                            hex.push(c);
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    if hex.is_empty() {
+                        panic!("Invalid hex literal");
+                    }
+                    tokens.push(Token::IntLiteral(i64::from_str_radix(&hex, 16).unwrap()));
+                    continue;
+                }
+                
+                // octal: starts with 0 and followed by digits
+                if ch == '0' && self.input.get(self.pos + 1).map_or(false, |c| c.is_ascii_digit()) {
+                    self.advance();
+                    let mut octal = String::new();
+                    while let Some(c) = self.peek() {
+                        if c >= '0' && c <= '7' {
+                            octal.push(c);
+                            self.advance();
+                        } else if c.is_ascii_digit() {
+                            panic!("Invalid octal digit: {}", c);
+                        } else {
+                            break;
+                        }
+                    }
+                    if octal.is_empty() {
+                        tokens.push(Token::IntLiteral(0));
+                    } else {
+                        tokens.push(Token::IntLiteral(i64::from_str_radix(&octal, 8).unwrap()));
+                    }
+                    continue;
+                }
+
+                // decimal or float
                 let mut num = String::new();
                 let mut is_float = false;
 
@@ -201,7 +243,6 @@ impl Lexer {
 
                 // handle exponents (1e9, 1E9)
                 if self.peek() == Some('e') || self.peek() == Some('E') {
-                    // exponents are floats in C
                     is_float = true;
                     num.push('e');
                     self.advance();
@@ -221,7 +262,7 @@ impl Lexer {
                     }
                 }
 
-                // float suffix, f or F or l or L fr long
+                // float suffix
                 if self.peek() == Some('f') || self.peek() == Some('F') || self.peek() == Some('l') || self.peek() == Some('L') {
                     is_float = true;
                     self.advance();
