@@ -1,35 +1,123 @@
-
 // top level program struct for ast
 #[derive(Debug)]
 pub struct Program {
-    pub structs: Vec<StructDef>,
-    pub functions: Vec<FunctionDef>,
+    pub declarations: Vec<Declaration>,
+}
+
+// top level declarations
+#[derive(Debug)]
+pub enum Declaration {
+    Function(FunctionDec),
+    Variable(VarDec),
+    Struct(StructDec),
+    Union(UnionDec),
+    Enum(EnumDec),
+    Typedef(TypedefDec),
+}
+
+#[derive(Debug)]
+pub struct UnionDec {
+    pub name: Option<String>,
+    pub fields: Vec<StructField>,
+}
+
+#[derive(Debug)]
+pub struct EnumDec {
+    pub name: Option<String>,
+    pub variants: Vec<EnumVariant>,
+}
+
+#[derive(Debug)]
+pub struct EnumVariant {
+    pub name: String,
+    pub value: Option<i64>,
+}
+
+#[derive(Debug)]
+pub struct TypedefDec {
+    pub name: String,
+    pub typ: QualifiedType,
+}
+
+#[derive(Debug)]
+pub struct VarDec {
+    pub name: String,
+    pub typ: QualifiedType,
+    pub init: Option<Expr>,
+    pub storage_class: StorageClass,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StorageClass {
+    None,
+    Static,
+    Extern,
 }
 
 // structs for the programs
 #[derive(Debug)]
-pub struct StructDef {
-    pub name: String,
-    pub fields: Vec<(String, Type)>,
+pub struct StructDec {
+    pub name: Option<String>,
+    pub fields: Vec<StructField>,
 }
 
-// function definition
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: String,
+    pub typ: QualifiedType,
+}
+
+// function declaration
 #[derive(Debug)]
-pub struct FunctionDef {
+pub struct FunctionDec {
     pub name: String,
-    pub params: Vec<(String, Type)>,
-    pub return_type: Option<Type>,
-    pub body: Vec<Statement>,
+    pub params: Vec<Param>,
+    pub return_type: QualifiedType,
+    pub body: Option<Vec<Statement>>,
+    pub storage_class: StorageClass,
 }
-
-// just supporting int, bool, and struct for now
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    Int,
-    Bool,
-    Struct(String),
+
+    // base
     Void,
+    Char,
+    Short,
+    Int,
+    Long,
+    LongLong,
+    Float,
+    Double,
+
+    // signed and unsigned
+    Signed(Box<Type>),
+    Unsigned(Box<Type>),
+
+    // derived types
+    Pointer(Box<Type>), // int*, float*, etc.
+    Array(Box<Type>, Option<usize>), // int[10] or int[],
+    Function(Box<Type>, Vec<Param>), //int (*)(int, int),
+
+    // user defined
+    Struct(String),
+    Union(String),
+    Enum(String),
+    Typedef(String),
+}
+
+// derived type, just const for now
+#[derive(Debug, Clone, PartialEq)]
+pub struct QualifiedType {
+    pub base: Type,
+    pub is_const: bool,
+}
+
+// function parameter type (less ambigupus)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Param {
+    pub name: Option<String>,
+    pub typ: QualifiedType,
 }
 
 // simple statements
@@ -37,10 +125,10 @@ pub enum Type {
 #[derive(Debug, Clone)]
 pub enum Statement {
     // int x = 5;
-    VarDec(Type, String, Option<Expr>),
+    VarDec(QualifiedType, String, Option<Expr>, StorageClass),
 
     // x = 5;
-    Assign(String, Expr),
+    Assign(Expr, Expr),
 
     // return expr;
     Return(Expr),
@@ -54,7 +142,7 @@ pub enum Statement {
     // foo(x)
     ExprStatement(Expr),
 
-    CompoundAssign(String, BinOp, Expr),
+    CompoundAssign(CompoundOp, Box<Expr>, Box<Expr>),
 
     ReturnVoid,
 
@@ -68,6 +156,34 @@ pub enum Statement {
     Break,
 
     Continue,
+
+    Switch(SwitchStmt),
+
+    DoWhile(DoWhileStmt),
+
+    Goto(String),
+
+    Label(String, Box<Statement>),
+
+    Block(Vec<Statement>), 
+}
+
+#[derive(Debug, Clone)]
+pub struct SwitchStmt {
+    pub expr: Expr,
+    pub cases: Vec<Case>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Case {
+    pub value: Option<Expr>,
+    pub stmts: Vec<Statement>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DoWhileStmt {
+    pub body: Vec<Statement>,
+    pub condition: Expr,
 }
 
 // simple expressions
@@ -79,6 +195,9 @@ pub enum Expr {
 
     // literal bool
     BoolLiteral(bool),
+    FloatLiteral(f64),
+    CharLiteral(char),
+    StringLiteral(String),
     
     // self explanatory
     Null,
@@ -90,9 +209,19 @@ pub enum Expr {
     FieldAccess(Box<Expr>, String),
 
     StructInit(String, Vec<Expr>),
+    ArrayIndex(Box<Expr>, Box<Expr>),     // arr[i]
+    Deref(Box<Expr>),                     // *ptr
+    AddrOf(Box<Expr>),                     // &x
+    PtrMember(Box<Expr>, String),          // ptr->field
+    Ternary(Box<Expr>, Box<Expr>, Box<Expr>),  // cond ? a : b
+    Cast(QualifiedType, Box<Expr>),         // (int)x
+    SizeofType(QualifiedType),             // sizeof(int)
+    SizeofExpr(Box<Expr>),                 // sizeof(x)
 
-    // foo(x, y)
-    FunctionCall(String, Vec<Expr>),
+    Assign(Box<Expr>, Box<Expr>),                      // x = 5
+    CompoundAssign(CompoundOp, Box<Expr>, Box<Expr>),  // x += 5
+    
+    Call(Box<Expr>, Vec<Expr>),  // can be (*fn_ptr)(args)
 }
 
 // binary operations
@@ -119,6 +248,21 @@ pub enum BinOp {
     Mod,
     Le,
     Ge,
+}
+
+// compound assignments
+#[derive(Debug, Clone, PartialEq)]
+pub enum CompoundOp {
+    AddAssign,    // +=
+    SubAssign,    // -=
+    MulAssign,    // *=
+    DivAssign,    // /=
+    ModAssign,    // %=
+    AndAssign,    // &=
+    OrAssign,     // |=
+    XorAssign,    // ^=
+    LShiftAssign, // <<=
+    RShiftAssign, // >>=
 }
 
 // unary operations
