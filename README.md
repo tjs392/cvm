@@ -1,72 +1,46 @@
-# CVM - C Virtual Machine with Garbage Collection
+# CVM
 
-A C compiler targeting a custom VM with automatic garbage collection, written in Rust.
+C subset language with a VM and garbage collector. Written in Rust.
 
-**Status:** Early development. Lexer, AST, and parser are complete. Semantic analysis, code generation, VM, and GC are in progress.
+## What it is
 
-## Roadmap
+CVM compiles a subset of C99 to bytecode and runs it on a register-based virtual machine with automatic garbage collection.
 
-#### Done
+Status: lexer, parser, and semantic analyzer done. Currently building the bytecode compiler and VM.
+
+## Done
 - Lexer
-- AST design
-- Parser
+- Parser  
+- AST
+- Semantic analysis
+- Symbol table
 
-#### TODO
-- Semantic analysis (type checking, symbol tables)
-- IR generation
-- VM implementation
+## Working on
+- Bytecode generation (register-based, Lua-style instruction format)
+- VM interpreter
 - Garbage collector
-- Standard library subset
 
-## Language Specification
+## End goal
+Run a web server written in CVM that binds to a port and handles requests
 
-CVM implements "Almost C" - a practical subset of C99 with some extensions.
+## Language features
 
-### Supported Syntax
+Types: int, char, short, long, float, double, void, pointers, arrays, structs, unions, enums, typedef, const
 
-**Types:**
-- Primitives: int, char, short, long, float, double, void
-- Signed/unsigned modifiers
-- Pointers, arrays (fixed-size), function pointers
-- Structs, unions, enums
-- typedef
-- const qualifier
+Control flow: if/else, while, for, do-while, switch, break, continue, goto, return
 
-**Control Flow:**
-- if/else, while, do-while, for
-- switch/case/default
-- break, continue, goto, labels
-- return
+Operators: arithmetic, comparison, logical, bitwise, assignment variants, ternary, member access, pointers, array indexing, cast, sizeof
 
-**Operators:**
-- Arithmetic: +, -, *, /, %, ++, --
-- Comparison: ==, !=, <, >, <=, >=
-- Logical: &&, ||, !
-- Bitwise: &, |, ^, ~, <<, >>
-- Assignment: =, +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=
-- Ternary: ? :
-- Member access: ., ->
-- Pointer: *, &
-- Array indexing: []
-- Cast, sizeof
+Storage classes: static, extern
 
-**Declarations:**
-- Functions (with and without definitions)
-- Global and local variables
-- Storage classes: static, extern
-- Struct, union, enum definitions
-- typedef
+Extensions: native bool type (true/false)
 
-**Extensions:**
-- Native bool type (true/false keywords) - C23 feature backported
+Not supported: VLAs, compound literals, preprocessor macros, volatile/restrict/inline, complex types, designated initializers
 
-### Not Supported
+## Architecture
 
-- Variable-length arrays (VLAs)
-- Compound literals
-- Overly complex declarators (limit 3 levels of nesting)
-- volatile, restrict, inline keywords
-- Full preprocessor (no #define macros, #ifdef, etc.)
-- Complex, Imaginary types
-- Designated initializers
-- Flexible array members
+Bytecode: Fixed 32-bit instructions, register-based (see isa_spec.txt)
+
+VM: 256 virtual registers per function, interpreter executes bytecode
+
+GC: not sure yet
