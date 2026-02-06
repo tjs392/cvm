@@ -1,0 +1,27 @@
+cvm bytecode notes
+
+how it works:
+- take the ast and convert to bytecode instructions
+- each function gets virtual registers (r0, r1, r2, etc)
+- during codegen track which registers are in use and reuse them when variables die
+- instructions are fixed 32-bit like lua
+
+instruction format:
+- 32 bits total
+- iABC format: [6-bit opcode][8-bit A][9-bit B][9-bit C]
+  - for three operand instructions
+- max 256 registers per function (8 bits)
+
+instructions:
+- ADD rA, rB, rC
+- SUB rA, rB, rC
+- MUL rA, rB, rC
+- DIV rA, rB, rC
+- MOD rA, rB, rC
+
+example codegen:
+- for expression like x + y
+- load x into r1
+- load y into r2
+- emit ADD r0, r1, r2
+- result in r0

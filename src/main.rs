@@ -3,6 +3,7 @@ mod lexer;
 mod parser;
 mod symbol_table;
 mod semantic;
+mod codegen;
 
 use lexer::Lexer;
 use parser::Parser;

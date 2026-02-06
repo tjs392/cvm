@@ -8,3 +8,4 @@ name = "cvm"
 sources = ["src/main.rs"]
 
 [dependencies]
+bitvec = "1.0.1"
