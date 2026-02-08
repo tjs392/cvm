@@ -18,11 +18,16 @@ instruction format:
 - max 256 registers per function (8 bits)
 
 instructions:
+
+iABC
 - ADD rA, rB, rC
 - SUB rA, rB, rC
 - MUL rA, rB, rC
 - DIV rA, rB, rC
 - MOD rA, rB, rC
+- MOV rA, rB, -
+
+iABx
 - LOADK rA, Kx -> load constant from constant table at index Kx into rA
 
 constant table:
@@ -32,8 +37,8 @@ constant table:
 - built during codegen
 
 example codegen:
-- for expression like x + y
-- load x into r1
-- load y into r2
-- emit ADD r0, r1, r2
-- result in r0
+- for expression like 5 + y
+- emit LOADK r0, K0 (where constants[0] = 5)
+- load y from symbol table (say it's in r1)
+- emit ADD r2, r0, r1
+- result in r2

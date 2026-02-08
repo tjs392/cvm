@@ -7,44 +7,32 @@ mod codegen;
 
 use lexer::Lexer;
 use parser::Parser;
-use ast::Declaration;
+use ast::{Declaration, Program};
+use codegen::CodeGenerator;
 use std::env;
 use std::fs;
 use std::process;
-use std::time::Instant;
 
 use crate::semantic::SemanticAnalyzer;
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() != 2 {
-        eprintln!("Usage: {} <file.c>", args[0]);
-        process::exit(1);
-    }
-
-    let filename = &args[1];
-
-    let total_start = Instant::now();
-
-    let read_start = Instant::now();
-    let source = match fs::read_to_string(filename) {
+fn read_file(filename: &str) -> String {
+    match fs::read_to_string(filename) {
         Ok(content) => content,
         Err(e) => {
             eprintln!("error reading file '{}': {}", filename, e);
             process::exit(1);
         }
-    };
-    let read_time = read_start.elapsed();
+    }
+}
 
-    let lex_start = Instant::now();
-    let mut lexer = Lexer::new(&source);
-    let tokens = lexer.tokenize();
-    let lex_time = lex_start.elapsed();
+fn lex(source: &str) -> Vec<lexer::Token> {
+    let mut lexer = Lexer::new(source);
+    lexer.tokenize()
+}
 
-    let parse_start = Instant::now();
+fn parse(tokens: Vec<lexer::Token>) -> Program {
     let mut parser = Parser::new(tokens);
-    let ast = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         parser.parse_program()
     })) {
         Ok(ast) => ast,
@@ -52,24 +40,29 @@ fn main() {
             eprintln!("\nParsing failed!");
             process::exit(1);
         }
-    };
-    let parse_time = parse_start.elapsed();
+    }
+}
 
-    let semantic_start = Instant::now();
+fn analyze(ast: &Program) -> Result<(), Vec<String>> {
     let mut analyzer = SemanticAnalyzer::new();
-    let semantic_result = analyzer.analyze(&ast);
-    let semantic_time = semantic_start.elapsed();
+    analyzer.analyze(ast)
+}
 
-    let total_time = total_start.elapsed();
+fn compile(ast: &Program) -> CodeGenerator {
+    let mut codegen = CodeGenerator::new();
+    codegen.gen_program(ast);
+    codegen
+}
 
-    println!("\n\n\n======== AST ========");
+fn print_ast(ast: &Program) {
+    println!("\n======== AST ========");
     println!("{:#?}", ast);
+}
 
-    println!("\n\n\n======== SEMANTIC ANALYSIS ========");
-    match &semantic_result {
-        Ok(()) => {
-            println!("No semantic errors found");
-        }
+fn print_semantic_results(result: &Result<(), Vec<String>>) {
+    println!("\n======== SEMANTIC ANALYSIS ========");
+    match result {
+        Ok(()) => println!("No semantic errors found"),
         Err(errors) => {
             println!("Found {} semantic error(s):\n", errors.len());
             for (i, err) in errors.iter().enumerate() {
@@ -77,8 +70,15 @@ fn main() {
             }
         }
     }
+}
 
-    println!("\n\n\n ======== SUMMARY ========");
+fn print_codegen_results(codegen: &CodeGenerator) {
+    println!("\n======== BYTECODE ========");
+    codegen.print_instructions();
+}
+
+fn print_summary(ast: &Program) {
+    println!("\n======== SUMMARY ========");
     println!("Total declarations: {}", ast.declarations.len());
     
     let mut func_count = 0;
@@ -123,27 +123,35 @@ fn main() {
         }
     }
     
-    println!("\n\n\n======== DECLARATION COUNTS ========");
+    println!("\n======== DECLARATION COUNTS ========");
     println!("Functions: {}", func_count);
     println!("Variables: {}", var_count);
     println!("Structs:   {}", struct_count);
     println!("Unions:    {}", union_count);
     println!("Enums:     {}", enum_count);
     println!("Typedefs:  {}", typedef_count);
+}
 
-    println!("\n\n\n======== TIMINGS ========");
-    println!("File reading:      {:?}", read_time);
-    println!("Lexing:            {:?}", lex_time);
-    println!("Parsing:           {:?}", parse_time);
-    println!("Semantic analysis: {:?}", semantic_time);
-    println!("Total time:        {:?}", total_time);
-    
-    let total_micros = total_time.as_micros() as f64;
-    if total_micros > 0.0 {
-        println!("\nbreakdown:");
-        println!("Lexing: {:.1}%", (lex_time.as_micros() as f64 / total_micros) * 100.0);
-        println!("Parsing: {:.1}%", (parse_time.as_micros() as f64 / total_micros) * 100.0);
+fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() != 2 {
+        eprintln!("Usage: {} <file.c>", args[0]);
+        process::exit(1);
     }
+
+    let filename = &args[1];
+
+    let source = read_file(filename);
+    let tokens = lex(&source);
+    let ast = parse(tokens);
+    let semantic_result = analyze(&ast);
+    let codegen = compile(&ast);
+
+    print_ast(&ast);
+    print_semantic_results(&semantic_result);
+    print_codegen_results(&codegen);
+    print_summary(&ast);
 
     if semantic_result.is_err() {
         process::exit(1);
