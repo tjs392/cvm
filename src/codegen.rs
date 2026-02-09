@@ -189,17 +189,42 @@ impl FunctionBuilder {
                 }
             }
 
+            Statement::Assign(lhs, rhs) => {
+                if let Expr::Identifier(name) = lhs {
+                    let var_reg = *self.sym_table.get(name).expect("Variable not found");
+
+                    self.gen_expr(rhs, Some(var_reg));
+                } else {
+                    // for now just doing simple variable assignment
+                    // todo: add array[index] - value
+                    // todo: add ptr->field = value, 
+                    // etc
+                    eprintln!("Unsupported assignment target: {:?}", lhs);
+                    todo!()
+                }
+            }
+
             // if statement are pretty straight forward
+            // basically they just create an unfinished jump instructions,
+            // generate the body of the jump,
+            // and then go back and finish the jump
+            // also conditions ar elike:
+            // if (x < 5) { body }
+            // LT r0(result) r1(x) k0(5) 
+            // Test r0
+            // Jmp +# << vm will check jump flag and pc++ if cond
             Statement::If(cond, then_body, else_body) => {
                 let cond_reg = self.gen_expr(cond, None);
                 self.emit(Instruction::ABC { opcode: OpCode::TEST, a: cond_reg, b: 0, c: 0 });
 
+                // this save idx of jump to else for finishing later
                 let jmp_to_else = self.emit_jump_placeholder();
 
                 for stmt in then_body {
                     self.gen_statement(stmt);
                 }
 
+                // if having trouble understanding, just generate some simple bytecode and look through it
                 if let Some(else_block) = else_body {
                     let jmp_skip_else = self.emit_jump_placeholder();
                     self.finish_jump(jmp_to_else);
@@ -213,6 +238,37 @@ impl FunctionBuilder {
                     self.finish_jump(jmp_to_else);
                 }
 
+                if !self.permanent_regs.contains(&cond_reg) {
+                    self.free_register(cond_reg);
+                }
+            }
+
+            Statement::While(cond, then_body) => {
+                // ** VERY IMPORTANT **
+                // On every instuction, the vm will increment the program counter
+                // so a JMP -7 actually goes back just *6* places! 
+                
+                // tracking where the condition test will be
+                // this tracks the EQ/LT/GT... instruction to jump back to it
+                let loop_start = self.instructions.len();
+
+                // eq r0 r1 r2
+                // test r0
+                let cond_reg = self.gen_expr(cond, None);
+                self.emit(Instruction::ABC { opcode: OpCode::TEST, a: cond_reg, b: 0, c: 0 });
+
+                let exit_loop_jump = self.emit_jump_placeholder();
+
+                for stmt in then_body {
+                    self.gen_statement(stmt);
+                }
+
+                let offset = loop_start as i32 - self.instructions.len() as i32 - 1;
+                self.emit(Instruction::iAsBx { opcode: OpCode::JMP, offset });
+
+                self.finish_jump(exit_loop_jump);
+
+                // dont forget to clear regs
                 if !self.permanent_regs.contains(&cond_reg) {
                     self.free_register(cond_reg);
                 }
@@ -320,6 +376,19 @@ impl FunctionBuilder {
                     target
                 } else {
                     var_reg
+                }
+            }
+
+            Expr::Assign(lhs, rhs) => {
+                if let Expr::Identifier(name) = lhs.as_ref() {
+                    let var_reg = *self.sym_table.get(name).expect("Variable not found");
+
+                    self.gen_expr(rhs, Some(var_reg));
+
+                    var_reg
+                } else {
+                    eprintln!("Unsupported assignment target: {:?}", lhs);
+                    todo!()
                 }
             }
 
