@@ -1,20 +1,56 @@
 # CVM
 
-CVM is a C subset language with a VM and garbage collector. Written in Rust.
-It will compile a subset of C99 to bytecode and run it on a register-based virtual machine with automatic garbage collection.
+A C runtime VM with garbage collection.
 
-Status: Currently building and designing bytecode ISA for the VM
+CVM compiles a subset of C to bytecode and runs it on a register-based virtual machine. The design is heavily inspired by Lua's VM architecture.
 
-## Language features
+## Current Status
 
-C99 Subset Lang Right Now
+Working:
+- Lexer, parser, semantic analyzer for C99 subset
+- Bytecode generation with register allocation
+- Arithmetic, comparisons, control flow (if/else, while loops)
+- Constant pooling and register optimizations
 
-Not supported: VLAs, compound literals, preprocessor macros, volatile/restrict/inline, complex types, designated initializers
+In progress:
+- For loops
+- VM interpreter
+- Garbage collector design
 
-## Architecture
+## Bytecode Architecture
 
-Bytecode: Fixed 32-bit instructions, register-based (see isa_spec.txt)
+**Instruction Format:**
+- Fixed 32-bit instructions (Lua-style encoding)
+- Register-based VM with 256 virtual registers per function
+- Three instruction formats:
+  - iABC: 3-operand instructions (arithmetic, comparisons, moves)
+  - iABx: register + large immediate (constant loading)
+  - iAsBx: signed offsets (jumps, control flow)
 
-VM: 256 virtual registers per function, interpreter executes bytecode, etc. Lua/JVM inspired
+**Register Allocation:**
+- Permanent registers: assigned to declared variables, never freed
+- Temporary registers: used for intermediate values, freed after use
+- Bitvec tracking for O(1) allocation (find first free register)
 
-GC: not sure yet
+**Optimizations:**
+- Constant deduplication: identical constants share table entries
+- Dead register reuse: temps freed immediately after last use
+- Result register reuse: operations write to operand registers when safe
+- Target register forwarding: expressions compute directly into destination
+- Special-case variable copies: `y = x` generates single MOV, not load+store
+
+See `isa_spec.txt` for complete ISA specification and examples.
+
+## Language Support
+
+Supports: variables, arithmetic, comparisons, if/else, while loops, assignments
+
+Not yet: functions, arrays, pointers, for loops, structs
+
+Won't support: VLAs, preprocessor, volatile/restrict/inline, complex types
+
+## Building
+```sh
+cargo build
+cargo run <source.c>
+```
