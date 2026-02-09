@@ -25,6 +25,7 @@ pub enum OpCode {
     // iABC
     ADD, SUB, MUL, DIV, MOD, MOV,
     EQ, LT, LE,
+    NE, GT, GE,
 
     // iABx
     LOADK, 
@@ -128,7 +129,7 @@ impl FunctionBuilder {
     }
 
     fn finish_jump(&mut self, jump_idx: usize) {
-        let offset = (self.instructions.len() - jump_idx - 1) as i32;
+        let offset = (self.instructions.len() - jump_idx) as i32;
         self.instructions[jump_idx] = Instruction::iAsBx { 
             opcode: OpCode::JMP, 
             offset 
@@ -274,6 +275,9 @@ impl FunctionBuilder {
                     BinOp::Eq => OpCode::EQ,
                     BinOp::Lt => OpCode::LT,
                     BinOp::Le => OpCode::LE,
+                    BinOp::Gt => OpCode::GT,
+                    BinOp::Ge => OpCode::GE,
+                    BinOp::NotEq => OpCode::NE,
 
                     other => {
                         eprintln!("Unimplemented expression: {:?}", other);
@@ -347,38 +351,40 @@ impl CodeGenerator {
             for (i, instr) in func.instructions.iter().enumerate() {
                 match instr {
                     Instruction::ABC { opcode, a, b, c } => {
-                        let op_name = match opcode {
-                            OpCode::ADD => "ADD",
-                            OpCode::SUB => "SUB",
-                            OpCode::MUL => "MUL",
-                            OpCode::DIV => "DIV",
-                            OpCode::MOD => "MOD",
-                            OpCode::MOV => "MOV",
-                            OpCode::EQ => "EQ",
-                            OpCode::LT => "LT",
-                            OpCode::LE => "LE",
-                            OpCode::TEST => "TEST",
-                            _ => "Unknown",
-                        };
-                        println!("{:04}: {} r{}, r{}, r{}", i, op_name, a, b, c);
+                        match opcode {
+                            OpCode::ADD => println!("{:04}: ADD r{}, r{}, r{}", i, a, b, c),
+                            OpCode::SUB => println!("{:04}: SUB r{}, r{}, r{}", i, a, b, c),
+                            OpCode::MUL => println!("{:04}: MUL r{}, r{}, r{}", i, a, b, c),
+                            OpCode::DIV => println!("{:04}: DIV r{}, r{}, r{}", i, a, b, c),
+                            OpCode::MOD => println!("{:04}: MOD r{}, r{}, r{}", i, a, b, c),
+                            OpCode::EQ => println!("{:04}: EQ r{}, r{}, r{}", i, a, b, c),
+                            OpCode::LT => println!("{:04}: LT r{}, r{}, r{}", i, a, b, c),
+                            OpCode::LE => println!("{:04}: LE r{}, r{}, r{}", i, a, b, c),
+                            OpCode::GT => println!("{:04}: GT r{}, r{}, r{}", i, a, b, c),
+                            OpCode::GE => println!("{:04}: GE r{}, r{}, r{}", i, a, b, c),
+                            OpCode::NE => println!("{:04}: NE r{}, r{}, r{}", i, a, b, c),
+                            
+                            OpCode::MOV => println!("{:04}: MOV r{}, r{}", i, a, b),
+                            
+                            OpCode::TEST => println!("{:04}: TEST r{}", i, a),
+                            
+                            _ => println!("{:04}: UNKNOWN r{}, r{}, r{}", i, a, b, c),
+                        }
                     }
 
                     Instruction::ABx { opcode, a, bx } => {
-                        let op_name = match opcode {
-                            OpCode::LOADK => "LOADK",
-                            _ => "Unknown",
-                        };
-                        println!("{:04}: {} r{}, K{}", i, op_name, a, bx);
+                        match opcode {
+                            OpCode::LOADK => println!("{:04}: LOADK r{}, K{}", i, a, bx),
+                            _ => println!("{:04}: UNKNOWN r{}, #{}", i, a, bx),
+                        }
                     }
 
                     Instruction::iAsBx { opcode, offset } => {
-                        let op_name = match opcode {
-                            OpCode::JMP => "JMP",
-                            _ => "Unknown",
-                        };
-                        println!("{:04}: {} {},", i, op_name, offset);
+                        match opcode {
+                            OpCode::JMP => println!("{:04}: JMP {}", i, offset),
+                            _ => println!("{:04}: UNKNOWN {}", i, offset),
+                        }
                     }
-
                 }
             }
             

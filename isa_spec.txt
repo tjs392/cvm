@@ -1,5 +1,8 @@
 cvm bytecode notes
 
+My bytecode design was heavily inspired by Lua's bytecode system:
+https://the-ravi-programming-language.readthedocs.io/en/latest/lua_bytecode_reference.html
+
 how it works:
 - take the ast and convert to bytecode instructions
 - each function gets virtual registers (r0, r1, r2, etc)
@@ -45,7 +48,7 @@ iAsBx (control flow)
 control flow pattern:
 - for "if (x < 5) { body }"
   1. LT r1, r0, r5         // r1 = (x < 5)
-  2. TEST r1               // test r1
+  2. TEST r1               // test r1 
   3. JMP +skip             // if false, jump over body, skip is an offset
   4. [body instructions]
   5. skip:
