@@ -26,6 +26,7 @@ pub enum OpCode {
     ADD, SUB, MUL, DIV, MOD, MOV,
     EQ, LT, LE,
     NE, GT, GE,
+    RETURN,
 
     // iABx
     LOADK, 
@@ -115,7 +116,9 @@ impl FunctionBuilder {
 
     // free register
     fn free_register(&mut self,reg_id: u8) {
-        self.register_state.set(reg_id as usize, false)
+        if !self.permanent_regs.contains(&reg_id) {
+            self.register_state.set(reg_id as usize, false)
+        }
     }
 
     /// emit instruction to instr vec
@@ -238,9 +241,7 @@ impl FunctionBuilder {
                     self.finish_jump(jmp_to_else);
                 }
 
-                if !self.permanent_regs.contains(&cond_reg) {
-                    self.free_register(cond_reg);
-                }
+                self.free_register(cond_reg);
             }
 
             Statement::While(cond, then_body) => {
@@ -269,9 +270,65 @@ impl FunctionBuilder {
                 self.finish_jump(exit_loop_jump);
 
                 // dont forget to clear regs
-                if !self.permanent_regs.contains(&cond_reg) {
-                    self.free_register(cond_reg);
+                self.free_register(cond_reg);
+            }
+
+            Statement::For(init, cond , incr , then_body) => {
+                if let Some(init_stmt) = init {
+                    self.gen_statement(init_stmt);
                 }
+
+                let loop_start = self.instructions.len();
+
+                let cond_reg = if let Some(cond_expr) = cond {
+                    let reg = self.gen_expr(cond_expr, None);
+                    self.emit(Instruction::ABC { opcode: OpCode::TEST, a: reg, b: 0, c: 0 });
+                    reg
+                } else {
+                    // infinite loop
+                    panic!("For loop without condition not yet supported");
+                };
+
+                let exit_loop_jump = self.emit_jump_placeholder();
+
+                for stmt in then_body {
+                    self.gen_statement(stmt);
+                }
+
+                // gen incr after body, before backward jmp
+                if let Some(incr_expr) = incr {
+                    self.gen_expr(incr_expr, None);
+                }
+
+                let offset = loop_start as i32 - self.instructions.len() as i32 - 1;
+                self.emit(Instruction::iAsBx { opcode: OpCode::JMP, offset });
+
+                self.finish_jump(exit_loop_jump);
+
+                self.free_register(cond_reg);
+            }
+
+            // returns are pretty straight forward:
+            // a is the result register to store the return
+            // if b == 1, then it is non void and do the store result
+            // else, the vm just skips and jumps back to the caller's PC
+            Statement::Return(expr) => {
+                let result_reg = self.gen_expr(expr, None);
+                self.emit(Instruction::ABC { 
+                    opcode: OpCode::RETURN, 
+                    a: result_reg, 
+                    b: 1, 
+                    c: 0 
+                })
+            }
+
+            Statement::ReturnVoid => {
+                self.emit(Instruction::ABC { 
+                    opcode: OpCode::RETURN, 
+                    a: 0,
+                    b: 0,
+                    c: 0 
+                });
             }
 
             Statement::Block(stmts) => {
@@ -348,10 +405,9 @@ impl FunctionBuilder {
                 // dont forget to free registers! :D >:D >_>
                 // but need to check if the return register is going into a variable!!
                 // so make sure youre not clearing permanent var regs
-                if !self.permanent_regs.contains(&left_reg) {
-                    self.free_register(left_reg);
-                }
-                if !self.permanent_regs.contains(&right_reg) && right_reg != result_reg {
+                self.free_register(left_reg);
+
+                if right_reg != result_reg {
                     self.free_register(right_reg);
                 }
 
@@ -436,6 +492,14 @@ impl CodeGenerator {
                             OpCode::MOV => println!("{:04}: MOV r{}, r{}", i, a, b),
                             
                             OpCode::TEST => println!("{:04}: TEST r{}", i, a),
+
+                            OpCode::RETURN => {
+                                if *b == 1 {
+                                    println!("{:04}: RETURN r{}", i, a);
+                                } else {
+                                    println!("{:04}: RETURN", i);
+                                }
+                            }
                             
                             _ => println!("{:04}: UNKNOWN r{}, r{}, r{}", i, a, b, c),
                         }
