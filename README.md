@@ -1,12 +1,9 @@
 # CVM
 
-C subset language with a VM and garbage collector. Written in Rust.
+CVM is a C subset language with a VM and garbage collector. Written in Rust.
+It will compile a subset of C99 to bytecode and run it on a register-based virtual machine with automatic garbage collection.
 
-## What it is
-
-CVM will compile a subset of C99 to bytecode and run it on a register-based virtual machine with automatic garbage collection.
-
-Status: lexer, parser, and semantic analyzer done. Currently building and designing bytecode ISA for da VM
+Status: Currently building and designing bytecode ISA for da VM
 
 ## Language features
 
