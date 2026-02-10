@@ -18,7 +18,7 @@ use std::{collections::{HashMap, HashSet}, u8::MAX};
 
 use bitvec::vec::BitVec;
 
-use crate::ast::{BinOp, Declaration, EnumDec, Expr, FunctionDec, Program, Statement, UnaryOp};
+use crate::ast::{BinOp, CompoundOp, Declaration, EnumDec, Expr, FunctionDec, Program, Statement, UnaryOp};
 
 // 6 bit opcode
 pub enum OpCode {
@@ -233,6 +233,29 @@ impl FunctionBuilder {
                     eprintln!("Unsupported assignment target: {:?}", lhs);
                     todo!()
                 }
+            }
+
+            Statement::CompoundAssign(op, lhs, rhs) => {
+                // this is easy, just turn the compound op into a binop and gen it
+                let bin_op = match op {
+                    CompoundOp::AddAssign => BinOp::Add,
+                    CompoundOp::SubAssign => BinOp::Sub,
+                    CompoundOp::MulAssign => BinOp::Mul,
+                    CompoundOp::DivAssign => BinOp::Div,
+                    CompoundOp::ModAssign => BinOp::Mod,
+                    CompoundOp::AndAssign => BinOp::BitAnd,
+                    CompoundOp::OrAssign => BinOp::BitOr,
+                    CompoundOp::XorAssign => BinOp::BitXor,
+                    CompoundOp::LShiftAssign => BinOp::LShift,
+                    CompoundOp::RShiftAssign => BinOp::RShift,
+                };
+                
+                let assign_stmt = Statement::Assign(
+                    *lhs.clone(),
+                    Expr::BinOp(lhs.clone(), bin_op, rhs.clone())
+                );
+                
+                self.gen_statement(&assign_stmt);
             }
 
             // if statement are pretty straight forward
@@ -515,6 +538,28 @@ impl FunctionBuilder {
                     eprintln!("Unsupported assignment target: {:?}", lhs);
                     todo!()
                 }
+            }
+
+            Expr::CompoundAssign(op, lhs, rhs) => {
+                let bin_op = match op {
+                    CompoundOp::AddAssign => BinOp::Add,
+                    CompoundOp::SubAssign => BinOp::Sub,
+                    CompoundOp::MulAssign => BinOp::Mul,
+                    CompoundOp::DivAssign => BinOp::Div,
+                    CompoundOp::ModAssign => BinOp::Mod,
+                    CompoundOp::AndAssign => BinOp::BitAnd,
+                    CompoundOp::OrAssign => BinOp::BitOr,
+                    CompoundOp::XorAssign => BinOp::BitXor,
+                    CompoundOp::LShiftAssign => BinOp::LShift,
+                    CompoundOp::RShiftAssign => BinOp::RShift,
+                };
+                
+                let assign_expr = Expr::Assign(
+                    lhs.clone(),
+                    Box::new(Expr::BinOp(lhs.clone(), bin_op, rhs.clone()))
+                );
+                
+                self.gen_expr(&assign_expr, target)
             }
 
             Expr::UnaryOp(op, expr) => {
