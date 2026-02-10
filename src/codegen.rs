@@ -28,6 +28,7 @@ pub enum OpCode {
     NE, GT, GE,
     RETURN,
     UNM, NOT, BNOT,
+    BAND, BOR, BXOR, SHL, SHR,
 
     // iABx
     LOADK, 
@@ -484,6 +485,12 @@ impl FunctionBuilder {
                     BinOp::Ge => OpCode::GE,
                     BinOp::NotEq => OpCode::NE,
 
+                    BinOp::BitAnd => OpCode::BAND,
+                    BinOp::BitOr => OpCode::BOR,
+                    BinOp::BitXor => OpCode::BXOR,
+                    BinOp::LShift => OpCode::SHL,
+                    BinOp::RShift => OpCode::SHR,
+
                     other => {
                         eprintln!("Unimplemented expression: {:?}", other);
                         todo!()
@@ -704,6 +711,11 @@ impl CodeGenerator {
                             OpCode::GT => println!("{:04}: GT r{}, r{}, r{}", i, a, b, c),
                             OpCode::GE => println!("{:04}: GE r{}, r{}, r{}", i, a, b, c),
                             OpCode::NE => println!("{:04}: NE r{}, r{}, r{}", i, a, b, c),
+                            OpCode::BAND => println!("{:04}: BAND r{}, r{}, r{}", i, a, b, c),
+                            OpCode::BOR => println!("{:04}: BOR r{}, r{}, r{}", i, a, b, c),
+                            OpCode::BXOR => println!("{:04}: BXOR r{}, r{}, r{}", i, a, b, c),
+                            OpCode::SHL => println!("{:04}: SHL r{}, r{}, r{}", i, a, b, c),
+                            OpCode::SHR => println!("{:04}: SHR r{}, r{}, r{}", i, a, b, c),
                             
                             OpCode::MOV => println!("{:04}: MOV r{}, r{}", i, a, b),
                             
