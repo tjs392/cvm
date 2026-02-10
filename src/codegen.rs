@@ -18,7 +18,7 @@ use std::{collections::{HashMap, HashSet}, u8::MAX};
 
 use bitvec::vec::BitVec;
 
-use crate::ast::{BinOp, Declaration, EnumDec, Expr, FunctionDec, Program, Statement};
+use crate::ast::{BinOp, Declaration, EnumDec, Expr, FunctionDec, Program, Statement, UnaryOp};
 
 // 6 bit opcode
 pub enum OpCode {
@@ -27,6 +27,7 @@ pub enum OpCode {
     EQ, LT, LE,
     NE, GT, GE,
     RETURN,
+    UNM, NOT, BNOT,
 
     // iABx
     LOADK, 
@@ -35,7 +36,6 @@ pub enum OpCode {
     // iAsBx
     JMP, // unconditional jump
 }
-
 
 pub enum Instruction {
     // iABC: three operand instructions (arithmetic, etc)
@@ -54,7 +54,7 @@ pub enum Instruction {
         bx: u32         // 18 bit immediate (262,143 MAX)
     },
 
-    iAsBx {
+    AsBx {
         opcode: OpCode,
         offset: i32, // enforce signed 18 bit offset <<
     },
@@ -65,6 +65,14 @@ pub struct FunctionChunk {
     pub instructions: Vec<Instruction>,
     pub constants: Vec<i64>,
     pub max_registers: u8,
+}
+
+pub struct LoopContext {
+    // loop condition instruction index
+    loop_start: usize,
+
+    // indices of JMP instructions that need to be finished
+    break_jumps: Vec<usize>,
 }
 
 // builder for compiling single func
@@ -91,6 +99,9 @@ struct FunctionBuilder {
 
     /// set of permanent variable registers
     permanent_regs: HashSet<u8>,
+
+    /// stack of loop contexts for nested loops
+    loop_stack: Vec<LoopContext>,
 }
 
 impl FunctionBuilder {
@@ -103,6 +114,7 @@ impl FunctionBuilder {
             sym_table: HashMap::new(),
             max_reg: 0,
             permanent_regs: HashSet::new(),
+            loop_stack: vec![],
         }
     }
 
@@ -127,13 +139,13 @@ impl FunctionBuilder {
     }
 
     fn emit_jump_placeholder(&mut self) -> usize {
-        self.emit(Instruction::iAsBx { opcode: OpCode::JMP, offset: 0 });
+        self.emit(Instruction::AsBx { opcode: OpCode::JMP, offset: 0 });
         self.instructions.len() - 1
     }
 
     fn finish_jump(&mut self, jump_idx: usize) {
         let offset = (self.instructions.len() - jump_idx) as i32;
-        self.instructions[jump_idx] = Instruction::iAsBx { 
+        self.instructions[jump_idx] = Instruction::AsBx { 
             opcode: OpCode::JMP, 
             offset 
         };
@@ -181,13 +193,29 @@ impl FunctionBuilder {
                         // claim the expression's result register (optimal)
                         // this will help reuse the result register
                         let expr_reg = self.gen_expr(init_expr, None);
-                        self.permanent_regs.insert(expr_reg);
-                        self.sym_table.insert(name.clone(), expr_reg);
+
+
+                        // Check if expr_reg is already a permanent register (like from ++x)
+                        if self.permanent_regs.contains(&expr_reg) {
+                            // need to allocate new register and MOV
+                            let var_reg = self.allocate_register();
+                            self.permanent_regs.insert(var_reg);
+                            self.sym_table.insert(name.clone(), var_reg);
+                            self.emit(Instruction::ABC { 
+                                opcode: OpCode::MOV, 
+                                a: var_reg, 
+                                b: expr_reg as u16, 
+                                c: 0 
+                            });
+                        } else {
+                            // if temp register - can claim it
+                            self.permanent_regs.insert(expr_reg);
+                            self.sym_table.insert(name.clone(), expr_reg);
+                        }
                     }
                 } else {
                     let var_reg = self.allocate_register();
                     self.permanent_regs.insert(var_reg);
-
                     self.sym_table.insert(name.clone(), var_reg);
                 }
             }
@@ -252,6 +280,12 @@ impl FunctionBuilder {
                 // tracking where the condition test will be
                 // this tracks the EQ/LT/GT... instruction to jump back to it
                 let loop_start = self.instructions.len();
+                
+                // push to loop stack to track contexts
+                self.loop_stack.push(LoopContext {
+                    loop_start,
+                    break_jumps: vec![],
+                });
 
                 // eq r0 r1 r2
                 // test r0
@@ -265,9 +299,16 @@ impl FunctionBuilder {
                 }
 
                 let offset = loop_start as i32 - self.instructions.len() as i32 - 1;
-                self.emit(Instruction::iAsBx { opcode: OpCode::JMP, offset });
+                self.emit(Instruction::AsBx { opcode: OpCode::JMP, offset });
 
                 self.finish_jump(exit_loop_jump);
+
+                // now that we know where the loop ends we can get the context and patch
+                // all the break jumps that need patching
+                let ctx = self.loop_stack.pop().unwrap();
+                for jump_idx in ctx.break_jumps {
+                    self.finish_jump(jump_idx);
+                }
 
                 // dont forget to clear regs
                 self.free_register(cond_reg);
@@ -279,6 +320,11 @@ impl FunctionBuilder {
                 }
 
                 let loop_start = self.instructions.len();
+
+                self.loop_stack.push(LoopContext {
+                    loop_start,
+                    break_jumps: vec![],
+                });
 
                 let cond_reg = if let Some(cond_expr) = cond {
                     let reg = self.gen_expr(cond_expr, None);
@@ -301,11 +347,34 @@ impl FunctionBuilder {
                 }
 
                 let offset = loop_start as i32 - self.instructions.len() as i32 - 1;
-                self.emit(Instruction::iAsBx { opcode: OpCode::JMP, offset });
+                self.emit(Instruction::AsBx { opcode: OpCode::JMP, offset });
 
                 self.finish_jump(exit_loop_jump);
 
+                // patch breakss
+                let ctx = self.loop_stack.pop().unwrap();
+                for jump_idx in ctx.break_jumps {
+                    self.finish_jump(jump_idx);
+                }
+
                 self.free_register(cond_reg);
+            }
+
+            Statement::Break => {
+                // need to make a jump placeholder and fill it in later
+                // then just add this jump to the loop context's
+                // jumps that need patching
+                let jump_idx = self.emit_jump_placeholder();
+                self.loop_stack.last_mut().unwrap().break_jumps.push(jump_idx);
+            }
+
+            Statement::Continue => {
+                // continue just jumps back to loop start which we already have
+                let loop_start = self.loop_stack.last().unwrap().loop_start;
+
+                // no patch needed because we already know everything
+                let offset = loop_start as i32 - self.instructions.len() as i32 - 1;
+                self.emit(Instruction::AsBx { opcode: OpCode::JMP, offset });
             }
 
             // returns are pretty straight forward:
@@ -448,6 +517,108 @@ impl FunctionBuilder {
                 }
             }
 
+            Expr::UnaryOp(op, expr) => {
+                match op {
+                    UnaryOp::Neg => {
+                        let expr_reg = self.gen_expr(expr, None);
+                        let result_reg = target.unwrap_or_else(|| self.allocate_register());
+                        self.emit(Instruction::ABC { opcode: OpCode::UNM, a:result_reg , b: expr_reg as u16, c: 0 });
+                        result_reg
+                    }
+
+                    UnaryOp::Not => {
+                        let expr_reg = self.gen_expr(expr, None);
+                        let result_reg = target.unwrap_or_else(|| self.allocate_register());
+                        self.emit(Instruction::ABC { opcode: OpCode::NOT, a:result_reg , b: expr_reg as u16, c: 0 });
+                        result_reg
+                    }
+
+                    UnaryOp::BitNot => {
+                        let expr_reg = self.gen_expr(expr, None);
+                        let result_reg = target.unwrap_or_else(|| self.allocate_register());
+                        self.emit(Instruction::ABC { opcode: OpCode::BNOT, a:result_reg , b: expr_reg as u16, c: 0 });
+                        result_reg
+                    }
+
+                    // decrement from the variable's permanent register and return said perm reg
+                    UnaryOp::PreInc => {
+                        if let Expr::Identifier(name) = expr.as_ref() {
+                            let var_reg = *self.sym_table.get(name).expect("Variable not found");
+
+                            let const_idx = self.add_constant(1);
+                            let one_reg = self.allocate_register();
+
+                            self.emit(Instruction::ABx { opcode: OpCode::LOADK, a: one_reg, bx: const_idx as u32 });
+                            self.emit(Instruction::ABC { opcode: OpCode::ADD, a: var_reg, b: var_reg as u16, c: one_reg as u16 });
+
+                            self.free_register(one_reg);
+                            var_reg
+                        } else {
+                            panic!("++ requires an identifier");
+                        }
+                    }
+
+                    UnaryOp::PreDec => {
+                        if let Expr::Identifier(name) = expr.as_ref() {
+                            let var_reg = *self.sym_table.get(name).expect("Variable not found");
+
+                            let const_idx = self.add_constant(1);
+                            let one_reg = self.allocate_register();
+
+                            self.emit(Instruction::ABx { opcode: OpCode::LOADK, a: one_reg, bx: const_idx as u32 });
+                            self.emit(Instruction::ABC { opcode: OpCode::SUB, a: var_reg, b: var_reg as u16, c: one_reg as u16 });
+
+                            self.free_register(one_reg);
+                            var_reg
+                        } else {
+                            panic!("-- requires an identifier");
+                        }
+                    }
+
+                    // the difference here is we will save the old value into a temp reg
+                    // then decrement the value in the permanent reg
+                    // and return the temp register with the old value
+                    UnaryOp::PostDec => {
+                        if let Expr::Identifier(name) = expr.as_ref() {
+                            let var_reg = *self.sym_table.get(name).expect("Variable not ofund");
+                            let temp_reg = self.allocate_register();
+
+                            let const_idx = self.add_constant(1);
+                            let one_reg = self.allocate_register();
+
+                            self.emit(Instruction::ABx { opcode: OpCode::LOADK, a: one_reg, bx: const_idx as u32 });
+                            self.emit(Instruction::ABC { opcode: OpCode::MOV, a: temp_reg, b: var_reg as u16, c: 0 });
+                            self.emit(Instruction::ABC { opcode: OpCode::SUB, a: var_reg, b: var_reg as u16, c: one_reg as u16 });
+
+                            self.free_register(one_reg);
+                            temp_reg
+                        } else {
+                            panic!("-- requires an identifier");
+                        }
+                    }
+
+                    UnaryOp::PostInc => {
+                        if let Expr::Identifier(name) = expr.as_ref() {
+                            let var_reg = *self.sym_table.get(name).expect("Variable not ofund");
+                            let temp_reg = self.allocate_register();
+
+                            let const_idx = self.add_constant(1);
+                            let one_reg = self.allocate_register();
+
+                            self.emit(Instruction::ABx { opcode: OpCode::LOADK, a: one_reg, bx: const_idx as u32 });
+                            self.emit(Instruction::ABC { opcode: OpCode::MOV, a: temp_reg, b: var_reg as u16, c: 0 });
+                            self.emit(Instruction::ABC { opcode: OpCode::ADD, a: var_reg, b: var_reg as u16, c: one_reg as u16 });
+
+                            self.free_register(one_reg);
+                            temp_reg
+
+                        } else {
+                            panic!("++ requires an identifier");
+                        }
+                    }
+                }
+            }
+            
             other => {
                 eprintln!("Unimplemented expression: {:?}", other);
                 todo!()
@@ -512,7 +683,7 @@ impl CodeGenerator {
                         }
                     }
 
-                    Instruction::iAsBx { opcode, offset } => {
+                    Instruction::AsBx { opcode, offset } => {
                         match opcode {
                             OpCode::JMP => println!("{:04}: JMP {}", i, offset),
                             _ => println!("{:04}: UNKNOWN {}", i, offset),

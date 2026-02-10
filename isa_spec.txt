@@ -41,6 +41,11 @@ iABC (comparisons - store result as 0 or 1)
 - GT rA, rB, rC --> rA = (rB > rC) ? 1 : 0
 - GE rA, rB, rC --> rA = (rB >= rC) ? 1 : 0
 
+iABC (Opertions)
+- UNM rA, rB
+- NOT rA, rB
+- BNOT rA, rB
+
 iABx
 - LOADK rA, Kx -> load constant from constant table at index Kx into rA
 - TEST rA -> check if rA is true (nonzero)
