@@ -14,7 +14,7 @@
 // with their own registers and constants
 // codegen will generator code per function
 
-use std::{collections::{HashMap, HashSet}, u8::MAX};
+use std::{collections::{HashMap, HashSet}, hash::Hash, string, u8::MAX};
 
 use bitvec::vec::BitVec;
 
@@ -29,10 +29,12 @@ pub enum OpCode {
     RETURN,
     UNM, NOT, BNOT,
     BAND, BOR, BXOR, SHL, SHR,
+    CALL,
 
     // iABx
     LOADK, 
     TEST,
+    CLOSURE,
 
     // iAsBx
     JMP, // unconditional jump
@@ -77,7 +79,7 @@ pub struct LoopContext {
 }
 
 // builder for compiling single func
-struct FunctionBuilder {
+struct FunctionBuilder<'a> {
     /// func name
     name: String,
 
@@ -103,10 +105,13 @@ struct FunctionBuilder {
 
     /// stack of loop contexts for nested loops
     loop_stack: Vec<LoopContext>,
+
+    /// global function map from the parent code builder
+    global_function_map: &'a HashMap<String, usize>,
 }
 
-impl FunctionBuilder {
-    fn new(name: String) -> Self {
+impl<'a> FunctionBuilder<'a> {
+    fn new(name: String, func_map: &'a HashMap<String, usize>) -> Self {
         FunctionBuilder {
             name,
             instructions: vec![],
@@ -116,6 +121,7 @@ impl FunctionBuilder {
             max_reg: 0,
             permanent_regs: HashSet::new(),
             loop_stack: vec![],
+            global_function_map: func_map,
         }
     }
 
@@ -125,6 +131,29 @@ impl FunctionBuilder {
         self.register_state.set(first, true);
         self.max_reg = self.max_reg.max(first as u8);
         first as u8
+    }
+
+    fn allocate_register_block(&mut self, count: u8) -> u8 {
+        let mut start = 0;
+        while start + count as usize <= 256 {
+            let mut found = true;
+            for i in 0..count as usize {
+                if self.register_state[start + i] {
+                    start = start + i + 1;
+                    found = false;
+                    break;
+                }
+            }
+            if found {
+                for i in 0..count as usize {
+                    self.register_state.set(start + i, true);
+                }
+                let end = (start + count as usize - 1) as u8;
+                self.max_reg = self.max_reg.max(end);
+                return start as u8;
+            }
+        }
+        panic!("out of registers: could not find {} consecutive free registers", count);
     }
 
     // free register
@@ -410,7 +439,7 @@ impl FunctionBuilder {
                 self.emit(Instruction::ABC { 
                     opcode: OpCode::RETURN, 
                     a: result_reg, 
-                    b: 1, 
+                    b: 2, 
                     c: 0 
                 })
             }
@@ -419,7 +448,7 @@ impl FunctionBuilder {
                 self.emit(Instruction::ABC { 
                     opcode: OpCode::RETURN, 
                     a: 0,
-                    b: 0,
+                    b: 1,
                     c: 0 
                 });
             }
@@ -569,6 +598,57 @@ impl FunctionBuilder {
                 self.gen_expr(&assign_expr, target)
             }
 
+            Expr::Call(func_expr, args) => {
+                // need to allocate a full register block for this since the
+                // vm will just take the register count and scan, not individual registers
+                let block_size = 1 + args.len() as u8;
+                let base = self.allocate_register_block(block_size);
+
+                // get func ref
+                if let Expr::Identifier(name) = func_expr.as_ref() {
+                    let func_idx = *self.global_function_map.get(name)
+                        .expect(&format!("Unknown function: {}", name));
+                    self.emit(Instruction::ABx {
+                        opcode: OpCode::CLOSURE,
+                        a: base,
+                        bx: func_idx as u32,
+                    });
+                } else {
+                    panic!("only direct function calls are supported for now");
+                }
+
+                // generating parameters into their allocated registers
+                for (i, arg) in args.iter().enumerate() {
+                    self.gen_expr(arg, Some(base + 1 + i as u8));
+                }
+
+                self.emit(Instruction::ABC {
+                    opcode: OpCode::CALL,
+                    a: base,
+                    b: (args.len() + 1) as u16,
+                    c: 2,
+                });
+
+                for i in 1..block_size {
+                    self.register_state.set((base + i) as usize, false);
+                }
+
+                if let Some(t) = target {
+                    if t != base {
+                        self.emit(Instruction::ABC {
+                            opcode: OpCode::MOV,
+                            a: t,
+                            b: base as u16,
+                            c: 0,
+                        });
+                        self.free_register(base);
+                    }
+                    t
+                } else {
+                    base
+                }
+            }
+
             Expr::UnaryOp(op, expr) => {
                 match op {
                     UnaryOp::Neg => {
@@ -684,11 +764,16 @@ impl FunctionBuilder {
 pub struct CodeGenerator {
     // all function chunks
     pub functions: Vec<FunctionChunk>,
+
+    pub function_map: HashMap<String, usize>,
 }
 
 impl CodeGenerator {
     pub fn new() -> Self {
-        CodeGenerator { functions: vec![] }
+        CodeGenerator { 
+            functions: vec![],
+            function_map: HashMap::new(),
+        }
     }
 
     pub fn print_instructions(&self) {
@@ -716,13 +801,14 @@ impl CodeGenerator {
                             OpCode::BXOR => println!("{:04}: BXOR r{}, r{}, r{}", i, a, b, c),
                             OpCode::SHL => println!("{:04}: SHL r{}, r{}, r{}", i, a, b, c),
                             OpCode::SHR => println!("{:04}: SHR r{}, r{}, r{}", i, a, b, c),
+                            OpCode::CALL => println!("{:04}: CALL r{}, {}, {}", i, a, b, c),
                             
                             OpCode::MOV => println!("{:04}: MOV r{}, r{}", i, a, b),
                             
                             OpCode::TEST => println!("{:04}: TEST r{}", i, a),
 
                             OpCode::RETURN => {
-                                if *b == 1 {
+                                if *b == 2 {
                                     println!("{:04}: RETURN r{}", i, a);
                                 } else {
                                     println!("{:04}: RETURN", i);
@@ -736,6 +822,7 @@ impl CodeGenerator {
                     Instruction::ABx { opcode, a, bx } => {
                         match opcode {
                             OpCode::LOADK => println!("{:04}: LOADK r{}, K{}", i, a, bx),
+                            OpCode::CLOSURE => println!("{:04}: CLOSURE r{}, F{}", i, a, bx),
                             _ => println!("{:04}: UNKNOWN r{}, #{}", i, a, bx),
                         }
                     }
@@ -757,6 +844,19 @@ impl CodeGenerator {
     }
 
     pub fn gen_program(&mut self, program: &Program) {
+        // first pass collects function names into function_map
+        let mut count = 0;
+        for decl in &program.declarations {
+            match decl {
+                Declaration::Function(func) => {
+                    self.function_map.insert(func.name.clone(), count);
+                    count +=1;
+                }
+                _ => {}
+            }
+        }
+
+        // second pass compiles
         for decl in &program.declarations {
             match decl {
                 Declaration::Function(func) => self.gen_function(func),
@@ -766,14 +866,23 @@ impl CodeGenerator {
     }
 
     fn gen_function(&mut self, func: &FunctionDec) {
-        let mut builder = FunctionBuilder::new(func.name.clone());
+        let mut builder = FunctionBuilder::new(func.name.clone(), &self.function_map);
         
+        for (i, param) in func.params.iter().enumerate() {
+            let reg = builder.allocate_register();
+            builder.permanent_regs.insert(reg);
+            if let Some(name) = &param.name {
+                builder.sym_table.insert(name.clone(), reg);
+            }
+        }
+
         if let Some(body) = &func.body {
             for stmt in body {
                 builder.gen_statement(stmt);
             }
         }
         
-        self.functions.push(builder.finalize());
+        let chunk = builder.finalize();
+        self.functions.push(chunk);
     }
 }

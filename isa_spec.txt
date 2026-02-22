@@ -53,16 +53,23 @@ iABC (bitwise operations)
 - SHL rA, rB, rC --> rA = rB << rC (left shift)
 - SHR rA, rB, rC --> rA = rB >> rC (right shift)
 
+iABC (Function Call)
+- CALL rA, B, C --> rA = base register where function ref is
+                -->  B = number of args + 1 ( B = 1 means 0 args, B = 2 means 2 args, B = 0 nothing for now)
+                -->  C = number of returns + 1 (C=1 means void, C=2 means 1 return, C=0 reserved later)
+
 iABx
 - LOADK rA, Kx -> load constant from constant table at index Kx into rA
 - TEST rA -> check if rA is true (nonzero)
+- CLOSURE rA, Fx --> A = destination register
+                 --> Fx = index into the function table
 
 iAsBx (control flow)
 - JMP sBx -> unconditional jump by signed offset sBx instructions
   - VM semantics: PC is incremented before jump, so JMP 0 = continue, JMP -1 = repeat current
 - RETURN rA, B -> return from function
-  - if B == 1: return value in rA
-  - if B == 0: void return (no value)
+  - if B == 1: void return (no value)
+  - if B == 2: return one value in R(A) 
 
 control flow patterns:
 
