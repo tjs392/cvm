@@ -174,7 +174,7 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     fn finish_jump(&mut self, jump_idx: usize) {
-        let offset = (self.instructions.len() - jump_idx) as i32;
+        let offset = (self.instructions.len() - jump_idx - 1) as i32;
         self.instructions[jump_idx] = Instruction::AsBx { 
             opcode: OpCode::JMP, 
             offset 

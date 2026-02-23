@@ -4,7 +4,9 @@ mod parser;
 mod symbol_table;
 mod semantic;
 mod codegen;
+mod vm;
 
+use vm::VM;
 use lexer::Lexer;
 use parser::Parser;
 use ast::{Declaration, Program};
@@ -156,4 +158,14 @@ fn main() {
     if semantic_result.is_err() {
         process::exit(1);
     }
+
+    let mut vm = VM::new(
+        codegen.functions,
+        codegen.function_map,
+    );
+
+    let result = vm.run();
+
+    println!("\n======== VM RESULT ========");
+    println!("Program returned: {}", result);
 }
